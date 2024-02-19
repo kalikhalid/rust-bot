@@ -3,17 +3,33 @@ use std::hash::Hasher;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::ptr::read;
 use qrcode::QrCode;
+use rusqlite::{Connection};
 use qrcode::types::QrError;
 use rand::{distributions::Alphanumeric, Rng};
 use teloxide::{
     prelude::*,
     utils::command::BotCommands,
+    RequestError,
+    dispatching::DefaultKey,
+    utils::command::ParseError,
 };
+use std::sync::Arc;
 use image::Luma;
+use anyhow::Result;
 use teloxide::types::{InputFile, ResponseParameters};
 use tokio::fs;
 use tokio::fs::OpenOptions;
+use tokio::io::AsyncWriteExt;
 
+mod controller;
+
+#[derive(Debug)]
+struct Code {
+    id: i32,
+    code: String,
+    activations: u8,
+    is_valid: bool,
+}
 
 #[tokio::main]
 async fn main() {
@@ -21,62 +37,52 @@ async fn main() {
     pretty_env_logger::init();
     log::info!("Starting command bot...");
     let bot = Bot::from_env();
-    Command::repl(bot, answer).await;
+    Command::repl(bot, handle).await;
 }
+
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "These commands are supported:")]
-enum Command{
-    #[command(description="start message handler.")]
+enum Command {
+    #[command(description = "start message handler.")]
     Start,
     #[command(description = "handle a username and an age.", parse_with = "split")]
-    Create { activations: String, act: u8},
+    Create { activations: String, act: u8 },
 }
 
-async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()>{
+async fn handle(bot: Bot, msg: Message, cmd: Command) -> Result<()> {
     match cmd {
         Command::Start => {
+            let db_file_name = "main.db";
+            let connection = Connection::open(db_file_name)?;
+            controller::create_table(&connection)?;
             let message: &str = msg.text().unwrap();
             let msgs: Vec<&str> = message.split(' ').collect();
-            if msgs.len() < 2{
+            if msgs.len() < 2 {
                 bot.send_message(msg.chat.id, "HI. This is start message.").await?;
-                return Ok(());
             }
-            let file = File::open("src/codes.txt")?;
-            let reader = BufReader::new(file);
-            let mut codes: Vec<(String, u32)> = Vec::new();
-            for line in reader.lines() {
-                let line = line?;
-                let mut parts = line.split_whitespace();
-                if let (Some(code), Some(count_str), None) = (parts.next(), parts.next(), parts.next()) {
-                    if let Ok(count) = count_str.parse::<u32>() {
-                        codes.push((code.to_string(), count));
+            let codes_iter = controller::get_codes(&connection)?;
+            for mut code in codes_iter {
+                if code.code == msgs[1].to_string() {
+                    code.activations -= 1;
+                    if code.activations <= 0 {
+                        controller::delete_code_by_id(&connection, code.id)?;
                     }
+                    bot.send_message(msg.chat.id, "You owned 20 skillcoins.").await?;
+                } else {
+                    bot.send_message(msg.chat.id, "This code is not avalible").await?;
                 }
             }
-            if let Some(index) = codes.iter().position(|(code, _)| code == msgs[1]) {
-                codes[index].1 -=  1;
-                if codes[index].1 ==  0 {
-                    codes.remove(index);
-                }
-                bot.send_message(msg.chat.id, "You owned 20 skillcoins.").await?;
-            }else{
-                bot.send_message(msg.chat.id, "This code is not avalible").await?;
-            }
-            let file = File::create("src/codes.txt")?;
-            let mut writer = BufWriter::new(file);
-            for (code, count) in codes {
-                writeln!(writer, "{} {}", code, count)?;
-            }
-
         }
-        Command::Create {activations, act} => {
-            let mut file = File::create("src/codes.txt")?;
+        Command::Create { activations, act } => {
+            let db_file_name = "main.db";
+            let connection = Connection::open(db_file_name)?;
             let code: String = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(5)
                 .map(char::from)
                 .collect();
-            writeln!(file, "{} {}", code, activations.trim().parse::<u8>().expect("err"))?;
+            let activations: u8 = activations.trim().parse::<u8>().expect("err");
+            controller::create_code(&connection, &code, activations)?;
             let qr = QrCode::new(format!("https://t.me/AppleTeabot?start={}", code)).unwrap();
             let img = qr.render::<Luma<u8>>().build();
             img.save(format!("src/q_{}_code.png", code)).unwrap();
