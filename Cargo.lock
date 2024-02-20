@@ -1759,6 +1759,7 @@ name = "tg-bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "dotenv",
  "env_logger",
  "image",
@@ -1768,10 +1769,12 @@ dependencies = [
  "qrcode",
  "rand 0.8.5",
  "regex",
+ "reqwest",
  "rusqlite",
  "rusqlite_migration",
  "secrecy",
  "serde",
+ "serde_json",
  "signal-hook",
  "teloxide",
  "tempdir",

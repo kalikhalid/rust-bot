@@ -6,6 +6,7 @@ use std::sync::Arc;
 mod bot;
 mod config;
 mod controller;
+mod api;
 
 #[derive(Debug)]
 struct Code {
