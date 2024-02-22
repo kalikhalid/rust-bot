@@ -1,0 +1,1 @@
+{"query":{"period":{"from":{"__instant":1708549200000},"to":{"__instant":1708635599999}},"watchPeriod":168,"bindingType":0,"rowType":null,"employeeId":null,"subjectId":null,"pageIx":0}}

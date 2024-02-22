@@ -26,6 +26,8 @@ enum Command {
     Start,
     #[command(description = "handle a username and an age.", parse_with = "split")]
     Create { activations: String, time: u8 },
+    #[command(description = "get period xlsx file ")]
+    GetTable { period: u8 },
 }
 
 
@@ -124,6 +126,13 @@ pub async fn handle_command(
             bot.send_photo(msg.chat.id, qr_send).await?;
             fs::remove_file(format!("image_data/q_{}_code.png", code))?;
         }
+        Command::GetTable {period} => {
+            let api_controller = api::ApiController::open().await?;
+            let file_path = api_controller.get_table_by_date(30).await?;
+            let file = InputFile::file(file_path);
+            bot.send_document(msg.chat.id, file).await?;
+        }
+
     }
     Ok(())
 }
